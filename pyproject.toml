@@ -11,4 +11,5 @@ dependencies = [
     "langchain-mistralai>=1.1.4",
     "langchain-openai>=1.2.2",
     "python-dotenv>=1.2.2",
+    "tavily>=1.1.0",
 ]
