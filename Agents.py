@@ -9,6 +9,12 @@ from langchain_core.messages import HumanMessage, ToolMessage
 from tavily import TavilyClient
 from rich import print
 
+from rich.console import Console
+from rich.panel import Panel
+from rich.markdown import Markdown
+
+console = Console()
+
 #Weather Tool 
 @tool 
 def get_weather(city : str) -> str:
@@ -26,14 +32,19 @@ def get_weather(city : str) -> str:
         return f"Could not get weather for {city}"
 
     data = response.json()
-    print("DEBUG: ", data)
+    # print("DEBUG: ", data)
 
-    return (
-        f"City: {city}\n"
-        f"Temperature: {data['main']['temp']}°C\n"
-        f"Humidity: {data['main']['humidity']}%\n"
-        f"Condition: {data['weather'][0]['description']}"
-    )
+    return f"""
+# 🌤 Weather Report
+
+📍 **City:** {city}
+
+🌡 **Temperature:** {data['main']['temp']}°C
+
+💧 **Humidity:** {data['main']['humidity']}%
+
+☁ **Condition:** {data['weather'][0]['description'].title()}
+"""
 
 #Tavily News Tool
 
@@ -55,12 +66,23 @@ def get_news(query: str) -> str:
 
     output = f"Summary:\n{answer}\n\nSources:\n"
 
-    for r in results:
-        output += (
-            f"\nTitle: {r['title']}"
-            f"\nContent: {r['content']}"
-            f"\nURL: {r['url']}\n"
-        )
+    for idx, r in enumerate(results, start=1):
+
+        title = r.get("title", "No Title")
+        content = r.get("content", "No Content")
+        url = r.get("url", "")
+
+        output += f"""
+
+## 📰 News {idx}
+
+**{title}**
+
+{content[:250]}...
+
+🔗 {url}
+
+"""
 
     return output
 
@@ -71,44 +93,107 @@ tools = {
 } 
 
 llm_with_tool = llm.bind_tools([get_weather, get_news])
-
-# Agent LOOP - Very importany
+# ==============================
+# Agent Loop
+# ==============================
 
 messages = []
 
-print("City intellegence System")
-print("Type EXIT to quit")
+console.print(
+    Panel.fit(
+        "🌍 City Intelligence Agent",
+        title="AI Assistant",
+        border_style="cyan",
+    )
+)
+
+console.print("[bold green]Type EXIT to quit[/bold green]")
 
 while True:
-    user_input = input("You: ")
+
+    console.rule("[bold blue]New Query[/bold blue]")
+
+    user_input = input("\nUser Query: ")
+
     if user_input.lower() == "exit":
+        console.print("\n👋 Goodbye!\n")
         break
-    messages.append(HumanMessage(content = user_input))
+
+    messages.append(HumanMessage(content=user_input))
 
     while True:
+
+        console.print("\n[cyan]🤔 Thinking...[/cyan]")
+
         result = llm_with_tool.invoke(messages)
+
         messages.append(result)
 
-        # if tool is required 
+        # Tool required
         if result.tool_calls:
-            for tool_call in result.tool_calls:
-                tool_name = tool_call['name']
-                
-                #HUMAN in the loop
-                confirm = input("Agent wants to call {tool_name} Approve(yes/no): ")
 
-                if confirm.lower() == "no":
-                    print("Tool call denied and I cannot get the latest information")
+            console.print(
+                "[magenta]🛠 Agent selected one or more tools[/magenta]\n"
+            )
+
+            for tool_call in result.tool_calls:
+
+                tool_name = tool_call["name"]
+
+                confirm = input(
+                    f"🔧 Agent wants to call [{tool_name}] Approve? (yes/no): "
+                )
+
+                if confirm.lower() != "yes":
+                    console.print(
+                        "[red]❌ Tool call denied[/red]"
+                    )
                     break
 
-                #excute tool
-                tool_result = tools[tool_name].invoke(tool_call)
-                
-                #add tool message
-                messages.append(ToolMessage(content = str(tool_result), tool_call_id = tool_call['id']))
-                
-                #Ask llm for final result
+                console.print(
+                    f"\n[yellow]⏳ Running {tool_name}...[/yellow]"
+                )
+
+                try:
+
+                    tool_result = tools[tool_name].invoke(tool_call)
+
+                    console.print(
+                        f"[green]✅ {tool_name} completed[/green]"
+                    )
+
+                    messages.append(
+                        ToolMessage(
+                            content=str(tool_result),
+                            tool_call_id=tool_call["id"],
+                        )
+                    )
+
+                except Exception as e:
+
+                    console.print(
+                        f"[red]❌ Error in {tool_name}: {e}[/red]"
+                    )
+
+                    messages.append(
+                        ToolMessage(
+                            content=f"Tool Error: {e}",
+                            tool_call_id=tool_call["id"],
+                        )
+                    )
+
             continue
+
         else:
-            print(f"Agent: {result.content}")
+
+            console.print()
+
+            console.print(
+                Panel(
+                    Markdown(result.content),
+                    title="🤖 Agent Response",
+                    border_style="green",
+                )
+            )
+
             break
